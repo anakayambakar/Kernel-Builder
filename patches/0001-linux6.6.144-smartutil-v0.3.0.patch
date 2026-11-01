@@ -1,15 +1,15 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Artecxyz <artecxyz@local>
-Date: Sat, 31 Oct 2026 23:38:29 +0700
+Date: Sun, 01 Nov 2026 20:31:19 +0700
 Subject: [PATCH] Smartutil CPUFreq Governor v0.3.0
 
 ---
  drivers/cpufreq/Kconfig             |   26 +
  drivers/cpufreq/Makefile            |    1 +
- drivers/cpufreq/cpufreq_smartutil.c | 1688 ++++++++++++++++++++++++++++++++
+ drivers/cpufreq/cpufreq_smartutil.c | 1692 +++++++++++++++++++++++++++++++++++
  include/linux/sched/cpufreq.h       |   11 +
  kernel/sched/cpufreq.c              |   28 +
- 5 files changed, 1754 insertions(+)
+ 5 files changed, 1758 insertions(+)
  create mode 100644 drivers/cpufreq/cpufreq_smartutil.c
 
 diff --git a/drivers/cpufreq/Kconfig b/drivers/cpufreq/Kconfig
@@ -63,10 +63,10 @@ index e2657bf89735..9efcb6dd7a43 100644
  obj-$(CONFIG_CPUFREQ_DT_PLATDEV)	+= cpufreq-dt-platdev.o
 diff --git a/drivers/cpufreq/cpufreq_smartutil.c b/drivers/cpufreq/cpufreq_smartutil.c
 new file mode 100644
-index 000000000000..e29416c72688
+index 000000000000..e48162eae61d
 --- /dev/null
 +++ b/drivers/cpufreq/cpufreq_smartutil.c
-@@ -0,0 +1,1688 @@
+@@ -0,0 +1,1692 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Smartutil CPUFreq governor (based on schedutil)
@@ -166,12 +166,15 @@ index 000000000000..e29416c72688
 +
 +/*
 + * latency_weight: lambda per mille of lambda_max.  Both floor tables are
-+ * built from the policy's own fmax, so the tunable is a device-independent
-+ * percentage rather than an absolute frequency: the ceiling of the floor,
-+ * reached at p = 1, is (latency_weight / 1000)^(1/3) * fmax.  The default
-+ * caps it at 60% of fmax on any device; cap_power bounds it either way.
++ * built from the policy's own fmax, so the tunable is a fraction rather
++ * than an absolute frequency.  Without an Energy Model the ceiling of the
++ * floor, reached at p = 1, is (latency_weight / 1000)^(1/3) * fmax, and
++ * the default holds it at 30% of fmax.  With one it is the state the
++ * model picks at that lambda instead, and it is lower: lambda_max is a
++ * property of the model, not a multiple of fmax.  cap_power bounds it
++ * either way.
 + */
-+#define SMUT_LATENCY_WEIGHT_DEF	216
++#define SMUT_LATENCY_WEIGHT_DEF	27
 +#define SMUT_LATENCY_WEIGHT_LIM	100000
 +
 +struct smut_tunables {
@@ -1602,11 +1605,12 @@ index 000000000000..e29416c72688
 +	 *                             and it binds both the util path and
 +	 *                             the floor.  Nothing else can hold a
 +	 *                             busy CPU below fmax
-+	 *  - latency_weight    216  : lambda per mille of lambda_max, i.e.
-+	 *                             60% of fmax as the floor's ceiling
-+	 *                             reached at p = 1, since both floor
-+	 *                             tables scale with the policy's fmax;
-+	 *                             cap_power bounds it either way
++	 *  - latency_weight     27  : lambda per mille of lambda_max, i.e.
++	 *                             30% of fmax as the floor's ceiling
++	 *                             at p = 1 without an Energy Model,
++	 *                             and the state the model picks at that
++	 *                             lambda with one; cap_power bounds it
++	 *                             either way
 +	 */
 +	tunables->rate_limit_us		= 2000;
 +	tunables->headroom_pct		= 25;
