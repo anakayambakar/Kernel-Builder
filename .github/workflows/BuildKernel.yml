@@ -1,14 +1,23 @@
-name: Build Testing Kernel
+name: Build RedPanda GKI Kernel
 
 on:
   workflow_dispatch:
     inputs:
-      kernelsu_variant:
+      build_variant:
         description: "Select build variant"
         required: true
-        default: "BakaSU"
+        default: "RedPanda"
         type: choice
         options:
+          - Testing
+          - RedPanda
+      kernelsu_variant:
+        description: "Select kernelsu variant"
+        required: true
+        default: "FinaSU"
+        type: choice
+        options:
+          - FinaSU
           - BakaSU
           - KernelSU-Next
       clang_choice:
@@ -23,18 +32,23 @@ on:
         required: true
         type: boolean
         default: true
+      schednew:
+        description: 'New Scheduler'
+        required: false
+        default: false
+        type: boolean
       github_release:
         description: 'Create GitHub Release'
         required: false
         default: false
         type: boolean
-
 permissions:
   contents: write
 
 env:
   TZ: 'Asia/Jakarta'
-  KERNEL_REPO: https://github.com/AyamSupers/kernel.git
+  KERNEL_REPO_TEST: https://github.com/anakayambakar/kernel
+  KERNEL_REPO_REDPANDA: https://${{ secrets.KERNEL_REPO_TOKEN }}@github.com/Artecxyz/RedPanda-kernel.git
   KERNEL_DEFCONFIG: redpanda_defconfig
   KBUILD_BUILD_USER: Artecxyz
   KBUILD_BUILD_HOST: users
@@ -65,7 +79,11 @@ jobs:
           
       - name: ⬇️ Clone kernel source
         run: |
-          git clone --depth=1 "$KERNEL_REPO" kernel_workspace
+          if [ "${{ github.event.inputs.build_variant }}" = "Testing" ]; then
+            git clone --depth=1 "$KERNEL_REPO_TEST" kernel_workspace
+          else
+            git clone --depth=1 "$KERNEL_REPO_REDPANDA" kernel_workspace
+          fi
           cd kernel_workspace
           KERNEL_VERSION=$(grep '^VERSION =' Makefile | sed 's/.*= //')
           KERNEL_PATCHLEVEL=$(grep '^PATCHLEVEL =' Makefile | sed 's/.*= //')
@@ -163,7 +181,21 @@ jobs:
       - name: ⚡ Setup KernelSU
         working-directory: kernel_workspace
         run: |
-          if [ "${{ github.event.inputs.kernelsu_variant }}" = "BakaSU" ]; then
+          if [ "${{ github.event.inputs.kernelsu_variant }}" = "FinaSU" ]; then
+            echo "🛠️ Setting up FinaSU (master branch)..."
+            curl -LSs "https://raw.githubusercontent.com/LyraVoid/FinaSU/refs/heads/master/kernel/setup.sh" | bash -s master
+            cd FinaSU
+            
+            KSU_LOCAL_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+            KSU_VERSION_CODE=$((30000 + $KSU_LOCAL_VERSION + 700))
+            KSU_TAG_NAME=$(git describe --abbrev=0 --tags 2>/dev/null || echo "v4.1.0")
+            KSU_UAPI_VERSION=$(grep -oP 'KERNEL_SU_UAPI_VERSION\s*[=,]\s*\K[0-9]+' uapi/supercall.h 2>/dev/null | head -n 1 || true)
+            if [ -n "$KSU_UAPI_VERSION" ]; then VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE}/${KSU_UAPI_VERSION})"; else VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE})"; fi
+            echo "KSUVER=$KSU_VERSION_CODE" >> $GITHUB_ENV
+            echo "KSU_TAG=${KSU_TAG_NAME}" >> $GITHUB_ENV
+            echo "VARIANT_VERSION_DISPLAY=${VARIANT_VERSION_DISPLAY}" >> $GITHUB_ENV
+            echo "✅ FinaSU ${VARIANT_VERSION_DISPLAY}"
+          elif [ "${{ github.event.inputs.kernelsu_variant }}" = "BakaSU" ]; then
             echo "🛠️ Setting up BakaSU (main branch)..."
             curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash -s main
             cd KernelSU
@@ -175,7 +207,7 @@ jobs:
               echo "::warning::KSU-Next compat patch not found at $KSNEXT_COMPAT_PATCH — skipping"
             fi
             KSU_LOCAL_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
-            KSU_VERSION_CODE=$((30000 + KSU_LOCAL_VERSION + 700))
+            KSU_VERSION_CODE=$((30000 + $KSU_LOCAL_VERSION + 700))
             KSU_TAG_NAME=$(git describe --abbrev=0 --tags 2>/dev/null || echo "v4.1.0")
             KSU_UAPI_VERSION=$(grep -oP 'KERNEL_SU_UAPI_VERSION\s*[=,]\s*\K[0-9]+' uapi/supercall.h 2>/dev/null | head -n 1 || true)
             if [ -n "$KSU_UAPI_VERSION" ]; then VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE}/${KSU_UAPI_VERSION})"; else VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE})"; fi
@@ -197,7 +229,7 @@ jobs:
             curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -s dev
             cd KernelSU-Next
             KSU_LOCAL_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
-            KSU_VERSION_CODE=$((30000 + KSU_LOCAL_VERSION))
+            KSU_VERSION_CODE=$((30000 + $KSU_LOCAL_VERSION))
             KSU_TAG_NAME=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.1")
             KSU_UAPI_VERSION=$(grep -oP 'KERNEL_SU_UAPI_VERSION\s*[=,]\s*\K[0-9]+' uapi/supercall.h 2>/dev/null | head -n 1 || true)
             if [ -n "$KSU_UAPI_VERSION" ]; then VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE}/${KSU_UAPI_VERSION})"; else VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE})"; fi
@@ -209,12 +241,20 @@ jobs:
             echo "❌ Unrecognized variant: ${{ github.event.inputs.kernelsu_variant }}"
             exit 1
           fi
-          # Tag rilis KSU (mis. v4.2.0 / v3.4.2) untuk baris Variant.
-          # Berjalan di dalam dir hasil setup (KernelSU / KernelSU-Next).
           KSU_TAG="$(git describe --tags 2>/dev/null || git rev-parse --short HEAD)"
           echo "KSU_TAG=${KSU_TAG}" >> $GITHUB_ENV
           echo "✅ KSU tag: ${KSU_TAG}"
-    
+
+      - name: Enable New Sched
+        if: inputs.schednew
+        working-directory: kernel_workspace
+        run: |
+          patch -p1 < $GITHUB_WORKSPACE/patches/0001-linux6.6.144-smartutil-v0.3.0.patch
+          cat >> arch/arm64/configs/$KERNEL_DEFCONFIG << 'EOF'
+          CONFIG_CPU_FREQ_GOV_SMARTUTIL=y
+          EOF
+          echo "✅ New Scheduler"
+          
       - name: 🔧 Setup Patches (SUSFS)
         working-directory: kernel_workspace
         run: |
@@ -223,10 +263,12 @@ jobs:
           cp susfs4ksu/kernel_patches/fs/* ./fs/
           cp susfs4ksu/kernel_patches/include/linux/* ./include/linux/
           cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch ./
+          # cp susfs4ksu/kernel_patches/55_selinux_hook_hide_susfs_artifacts.patch ./
+          # cp susfs4ksu/kernel_patches/56_selinuxfs_hide_sensitive_av.patch ./
           
           patch -p1 < 50_add_susfs_in_gki-android15-6.6.patch || true
-          patch -p1 < 55_selinux_hook_hide_susfs_artifacts.patch || true
-          patch -p1 < 56_selinuxfs_hide_sensitive_av.patch || true
+          # patch -p1 < 55_selinux_hook_hide_susfs_artifacts.patch || true
+          # patch -p1 < 56_selinuxfs_hide_sensitive_av.patch || true
           if grep -q "SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))" fs/proc/task_mmu.c 2>/dev/null; then
             echo "✅ SUSFS setup complete"
           else
@@ -266,9 +308,6 @@ jobs:
               ;;
           esac
           
-          set_config CONFIG_HEADERS_INSTALL n
-          set_config CONFIG_LD_DEAD_CODE_DATA_ELIMINATION y
-          
           set_config CONFIG_KSU_SUSFS y
           set_config CONFIG_KSU_SUSFS_SUS_PATH y
           set_config CONFIG_KSU_SUSFS_SUS_MOUNT y
@@ -284,7 +323,6 @@ jobs:
               set_config CONFIG_KSU_SUSFS_TRY_UMOUNT y
               ;;
           esac
-          
           sed -i 's/check_defconfig//' "$KERNEL_ROOT/build.config.gki" 2>/dev/null || true
           echo "Kernel configs enabled in $KERNEL_DEFCONFIG"
           
@@ -311,13 +349,6 @@ jobs:
           echo '#!/bin/bash' > ld-wrapper
           echo 'ld.lld "$@" --thinlto-cache-dir=$LDCACHE_DIR --thinlto-jobs=$(($(nproc --all) / 2))' >> ld-wrapper
           chmod +x ld-wrapper
-
-          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/lib/libfakestat.so || true
-          wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/lib/libfaketimeMT.so || true
-          chmod 777 ./*.so || true
-          export FAKESTAT="1999-09-09 12:00:00"
-          export FAKETIME="@1999-09-09 13:00:00"
-          export PRELOAD_LIBS="$(pwd)/libfakestat.so $(pwd)/libfaketimeMT.so"
           
           make -j$(nproc --all) LLVM=1 LLVM_IAS=1 CC="ccache clang" HOSTCC="ccache gcc" \
             LD="$(pwd)/ld-wrapper" HOSTLD="$(pwd)/ld-wrapper" O=$GITHUB_WORKSPACE/kout \
@@ -351,40 +382,6 @@ jobs:
           ZIP_NAME=RedPanda-GKI-${{ github.event.inputs.kernelsu_variant }}-$(date +%Y%m%d-%H%M).zip
           zip -r9 "../$ZIP_NAME" ./*
 
-      - name: 📨 Stage for Telegram post
-        env:
-          KSU_VARIANT: ${{ github.event.inputs.kernelsu_variant }}
-          KSUVER: ${{ env.KSUVER }}
-          KERNEL_FULL_VERSION: ${{ env.KERNEL_FULL_VERSION }}
-          KERNEL_BRANCH: ${{ env.KERNEL_BRANCH }}
-          KERNEL_SOURCE_OWNER: AyamSupers
-          KERNEL_SOURCE_REPO: kernel
-          CLANG_CHOICE: ${{ github.event.inputs.clang_choice }}
-          STAGE_DIR: ${{ github.workspace }}/post-stage
-        run: |
-          ZIP_PATH="$(ls kernel_workspace/RedPanda-GKI-*.zip | head -n 1)"
-          ZIP_NAME="$(basename "$ZIP_PATH")"
-          SUSFS_VERSION_TAG="$(grep -E '^#define SUSFS_VERSION[[:space:]]' kernel_workspace/include/linux/susfs.h 2>/dev/null | awk '{print $3}' | tr -d '"' || true)"
-          echo "SUSFS version: ${SUSFS_VERSION_TAG:-unknown}"
-          ZIP_PATH="$ZIP_PATH" ZIP_NAME="$ZIP_NAME" SUSFS_VERSION_TAG="$SUSFS_VERSION_TAG" bash release/telegram/stage.sh
-
-      - name: 🪞 Mirror to PixelDrain
-        id: pixeldrain
-        env:
-          PIXELDRAIN_API_KEY: ${{ secrets.PIXELDRAIN_API_KEY }}
-          STAGE_DIR: ${{ github.workspace }}/post-stage
-        run: |
-          URL="$(bash release/telegram/mirror_pixeldrain.sh | tail -n 1)"
-          echo "url=${URL}" >> "$GITHUB_OUTPUT"
-
-      - name: 📤 Upload post-stage
-        uses: actions/upload-artifact@v7
-        with:
-          name: post-stage
-          path: post-stage/*.zip
-          if-no-files-found: ignore
-          retention-days: 1
-
       - name: 📤 Upload zip artifact
         if: github.event.inputs.kernelsu_variant != 'none' && github.event.inputs.github_release != 'true'
         uses: actions/upload-artifact@v7
@@ -401,30 +398,17 @@ jobs:
           name: RedPanda GKI ${{ github.event.inputs.kernelsu_variant }} v${{ env.KSUVER }} - ${{ env.KERNEL_FULL_VERSION }}
           files: kernel_workspace/*.zip
 
-      - name: 📦 Save Cache
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ github.event.inputs.kernelsu_variant }}-${{ github.event.inputs.clang_choice }}-${{ env.KERNEL_FULL_VERSION }}
-
-      - name: 📦 Save ThinLTO Cache
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ env.LDCACHE_DIR }}
-          key: thinlto-cache-${{ runner.os }}-${{ env.KERNEL_FULL_VERSION }}
-
-      - name: Send a notification to the Telegram community group.
+      - name: 📨 Send Telegram (simple)
         if: github.event.inputs.telegram_notify == 'true'
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          MESSAGE_THREAD_ID: ${{secrets.MESSAGE_THREAD_ID}}
+          MESSAGE_THREAD_ID: ${{ secrets.MESSAGE_THREAD_ID }}
         run: |
-          set -euo pipefail
-
           BUILD_END=$(date +%s)
-          BUILD_MIN=$(( (BUILD_END - BUILD_START) / 60 ))
-          BUILD_SEC=$(( (BUILD_END - BUILD_START) % 60 ))
+          BUILD_DUR=$((BUILD_END - BUILD_START))
+          BUILD_MIN=$((BUILD_DUR / 60))
+          BUILD_SEC=$((BUILD_DUR % 60))
 
           cat > /tmp/tg_caption.html <<EOF
           <b>Kernel Build Successful!</b>
@@ -450,3 +434,16 @@ jobs:
             -F document=@"${ZIP_PATH}" \
             -F caption="</tmp/tg_caption.html" \
             -F parse_mode="HTML"
+
+      - name: 📦 Save Cache
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ github.event.inputs.kernelsu_variant }}-${{ github.event.inputs.clang_choice }}-${{ env.KERNEL_FULL_VERSION }}
+
+      - name: 📦 Save ThinLTO Cache
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LDCACHE_DIR }}
+          key: thinlto-cache-${{ runner.os }}-${{ env.KERNEL_FULL_VERSION }}
+
