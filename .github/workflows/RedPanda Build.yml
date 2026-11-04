@@ -172,7 +172,7 @@ jobs:
             branch = "master"
             echo "🛠️ Setting up FinaSU ($branch branch)..."
             curl -LSs "https://raw.githubusercontent.com/LyraVoid/FinaSU/refs/heads/$branch/kernel/setup.sh" | bash -s $branch
-            cd KernelSU
+            cd FinaSU
             
             KSU_LOCAL_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
             KSU_VERSION_CODE=$((30000 + $KSU_LOCAL_VERSION + 700))
