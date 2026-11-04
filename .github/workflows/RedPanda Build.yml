@@ -6,9 +6,10 @@ on:
       kernelsu_variant:
         description: "Select build variant"
         required: true
-        default: "BakaSU"
+        default: "FinaSU"
         type: choice
         options:
+          - FinaSU
           - BakaSU
           - KernelSU-Next
       clang_choice:
@@ -167,9 +168,25 @@ jobs:
       - name: ⚡ Setup KernelSU
         working-directory: kernel_workspace
         run: |
-          if [ "${{ github.event.inputs.kernelsu_variant }}" = "BakaSU" ]; then
-            echo "🛠️ Setting up BakaSU (main branch)..."
-            curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash -s main
+          if [ "${{ github.event.inputs.kernelsu_variant }}" = "FinaSU" ]; then
+            branch = "master"
+            echo "🛠️ Setting up FinaSU ($branch branch)..."
+            curl -LSs "https://raw.githubusercontent.com/LyraVoid/FinaSU/refs/heads/$branch/kernel/setup.sh" | bash -s $branch
+            cd KernelSU
+            
+            KSU_LOCAL_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+            KSU_VERSION_CODE=$((30000 + $KSU_LOCAL_VERSION + 700))
+            KSU_TAG_NAME=$(git describe --abbrev=0 --tags 2>/dev/null || echo "v4.1.0")
+            KSU_UAPI_VERSION=$(grep -oP 'KERNEL_SU_UAPI_VERSION\s*[=,]\s*\K[0-9]+' uapi/supercall.h 2>/dev/null | head -n 1 || true)
+            if [ -n "$KSU_UAPI_VERSION" ]; then VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE}/${KSU_UAPI_VERSION})"; else VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE})"; fi
+            echo "KSUVER=$KSU_VERSION_CODE" >> $GITHUB_ENV
+            echo "KSU_TAG=${KSU_TAG_NAME}" >> $GITHUB_ENV
+            echo "VARIANT_VERSION_DISPLAY=${VARIANT_VERSION_DISPLAY}" >> $GITHUB_ENV
+            echo "✅ FinaSU ${VARIANT_VERSION_DISPLAY}"
+          elif [ "${{ github.event.inputs.kernelsu_variant }}" = "BakaSU" ]; then
+            branch = "main"
+            echo "🛠️ Setting up BakaSU ($branch branch)..."
+            curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/$branch/kernel/setup.sh" | bash -s $branch
             cd KernelSU
             KSNEXT_COMPAT_PATCH="$GITHUB_WORKSPACE/patches/bakasu_ksunext_compat.patch"
             if [ -f "$KSNEXT_COMPAT_PATCH" ]; then
@@ -179,7 +196,7 @@ jobs:
               echo "::warning::KSU-Next compat patch not found at $KSNEXT_COMPAT_PATCH — skipping"
             fi
             KSU_LOCAL_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
-            KSU_VERSION_CODE=$((30000 + KSU_LOCAL_VERSION + 700))
+            KSU_VERSION_CODE=$((30000 + $KSU_LOCAL_VERSION + 700))
             KSU_TAG_NAME=$(git describe --abbrev=0 --tags 2>/dev/null || echo "v4.1.0")
             KSU_UAPI_VERSION=$(grep -oP 'KERNEL_SU_UAPI_VERSION\s*[=,]\s*\K[0-9]+' uapi/supercall.h 2>/dev/null | head -n 1 || true)
             if [ -n "$KSU_UAPI_VERSION" ]; then VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE}/${KSU_UAPI_VERSION})"; else VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE})"; fi
@@ -197,11 +214,12 @@ jobs:
             fi
             sed -i 's/-dirty//g' kernel/Kbuild
           elif [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next" ]; then
-            echo "🛠️ Setting up KernelSU-Next (dev branch)..."
-            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -s dev
+            branch = "dev"
+            echo "🛠️ Setting up KernelSU-Next ($branch branch)..."
+            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/$branch/kernel/setup.sh" | bash -s $branch
             cd KernelSU-Next
             KSU_LOCAL_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
-            KSU_VERSION_CODE=$((30000 + KSU_LOCAL_VERSION))
+            KSU_VERSION_CODE=$((30000 + $KSU_LOCAL_VERSION))
             KSU_TAG_NAME=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.1")
             KSU_UAPI_VERSION=$(grep -oP 'KERNEL_SU_UAPI_VERSION\s*[=,]\s*\K[0-9]+' uapi/supercall.h 2>/dev/null | head -n 1 || true)
             if [ -n "$KSU_UAPI_VERSION" ]; then VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE}/${KSU_UAPI_VERSION})"; else VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE})"; fi
