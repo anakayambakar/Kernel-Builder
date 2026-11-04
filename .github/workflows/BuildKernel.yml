@@ -19,7 +19,6 @@ on:
         options:
           - FinaSU
           - BakaSU
-          - KernelSU-Next
       clang_choice:
         description: "Select Clang toolchain"
         required: true
@@ -185,20 +184,16 @@ jobs:
             echo "🛠️ Setting up FinaSU (master branch)..."
             curl -LSs "https://raw.githubusercontent.com/LyraVoid/FinaSU/refs/heads/master/kernel/setup.sh" | bash -s master
             cd FinaSU
+
+            KSU_VERSION=$(expr $(git rev-list --count HEAD) + 30700 2>/dev/null || echo 114514)
+            echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+            echo "✅ FinaSU $(git rev-parse --short HEAD) (ver $KSU_VERSION)"
             
-            KSU_LOCAL_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
-            KSU_VERSION_CODE=$((30000 + $KSU_LOCAL_VERSION + 700))
-            KSU_TAG_NAME=$(git describe --abbrev=0 --tags 2>/dev/null || echo "v4.1.0")
-            KSU_UAPI_VERSION=$(grep -oP 'KERNEL_SU_UAPI_VERSION\s*[=,]\s*\K[0-9]+' uapi/supercall.h 2>/dev/null | head -n 1 || true)
-            if [ -n "$KSU_UAPI_VERSION" ]; then VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE}/${KSU_UAPI_VERSION})"; else VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE})"; fi
-            echo "KSUVER=$KSU_VERSION_CODE" >> $GITHUB_ENV
-            echo "KSU_TAG=${KSU_TAG_NAME}" >> $GITHUB_ENV
-            echo "VARIANT_VERSION_DISPLAY=${VARIANT_VERSION_DISPLAY}" >> $GITHUB_ENV
-            echo "✅ FinaSU ${VARIANT_VERSION_DISPLAY}"
           elif [ "${{ github.event.inputs.kernelsu_variant }}" = "BakaSU" ]; then
             echo "🛠️ Setting up BakaSU (main branch)..."
             curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash -s main
             cd KernelSU
+            
             KSNEXT_COMPAT_PATCH="$GITHUB_WORKSPACE/patches/bakasu_ksunext_compat.patch"
             if [ -f "$KSNEXT_COMPAT_PATCH" ]; then
               patch -p1 < "$KSNEXT_COMPAT_PATCH"
@@ -206,15 +201,10 @@ jobs:
             else
               echo "::warning::KSU-Next compat patch not found at $KSNEXT_COMPAT_PATCH — skipping"
             fi
-            KSU_LOCAL_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
-            KSU_VERSION_CODE=$((30000 + $KSU_LOCAL_VERSION + 700))
-            KSU_TAG_NAME=$(git describe --abbrev=0 --tags 2>/dev/null || echo "v4.1.0")
-            KSU_UAPI_VERSION=$(grep -oP 'KERNEL_SU_UAPI_VERSION\s*[=,]\s*\K[0-9]+' uapi/supercall.h 2>/dev/null | head -n 1 || true)
-            if [ -n "$KSU_UAPI_VERSION" ]; then VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE}/${KSU_UAPI_VERSION})"; else VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE})"; fi
-            echo "KSUVER=$KSU_VERSION_CODE" >> $GITHUB_ENV
-            echo "KSU_TAG=${KSU_TAG_NAME}" >> $GITHUB_ENV
-            echo "VARIANT_VERSION_DISPLAY=${VARIANT_VERSION_DISPLAY}" >> $GITHUB_ENV
-            echo "✅ BakaSU ${VARIANT_VERSION_DISPLAY}"
+            
+            KSU_VERSION=$(expr $(git rev-list --count HEAD) + 30700 2>/dev/null || echo 114514)
+            echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+            echo "✅ BakaSU $(git rev-parse --short HEAD) (ver $KSU_VERSION)"
 
             MM_PATCH="$GITHUB_WORKSPACE/patches/more_multi_manager.patch"
             if [ -f "$MM_PATCH" ]; then
@@ -224,19 +214,6 @@ jobs:
               echo "::warning::File Patch not found at $MM_PATCH — skipping"
             fi
             sed -i 's/-dirty//g' kernel/Kbuild
-          elif [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next" ]; then
-            echo "🛠️ Setting up KernelSU-Next (dev branch)..."
-            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -s dev
-            cd KernelSU-Next
-            KSU_LOCAL_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
-            KSU_VERSION_CODE=$((30000 + $KSU_LOCAL_VERSION))
-            KSU_TAG_NAME=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.1")
-            KSU_UAPI_VERSION=$(grep -oP 'KERNEL_SU_UAPI_VERSION\s*[=,]\s*\K[0-9]+' uapi/supercall.h 2>/dev/null | head -n 1 || true)
-            if [ -n "$KSU_UAPI_VERSION" ]; then VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE}/${KSU_UAPI_VERSION})"; else VARIANT_VERSION_DISPLAY="${KSU_TAG_NAME} (${KSU_VERSION_CODE})"; fi
-            echo "KSUVER=$KSU_VERSION_CODE" >> $GITHUB_ENV
-            echo "KSU_TAG=${KSU_TAG_NAME}" >> $GITHUB_ENV
-            echo "VARIANT_VERSION_DISPLAY=${VARIANT_VERSION_DISPLAY}" >> $GITHUB_ENV
-            echo "✅ KernelSU-Next ${VARIANT_VERSION_DISPLAY}"
           else
             echo "❌ Unrecognized variant: ${{ github.event.inputs.kernelsu_variant }}"
             exit 1
@@ -263,12 +240,8 @@ jobs:
           cp susfs4ksu/kernel_patches/fs/* ./fs/
           cp susfs4ksu/kernel_patches/include/linux/* ./include/linux/
           cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch ./
-          # cp susfs4ksu/kernel_patches/55_selinux_hook_hide_susfs_artifacts.patch ./
-          # cp susfs4ksu/kernel_patches/56_selinuxfs_hide_sensitive_av.patch ./
           
           patch -p1 < 50_add_susfs_in_gki-android15-6.6.patch || true
-          # patch -p1 < 55_selinux_hook_hide_susfs_artifacts.patch || true
-          # patch -p1 < 56_selinuxfs_hide_sensitive_av.patch || true
           if grep -q "SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))" fs/proc/task_mmu.c 2>/dev/null; then
             echo "✅ SUSFS setup complete"
           else
@@ -302,11 +275,8 @@ jobs:
           set_config CONFIG_KSU y
           set_config CONFIG_KALLSYMS y
           set_config CONFIG_KALLSYMS_ALL y
-          case "${{ github.event.inputs.kernelsu_variant }}" in
-            "KernelSU-Next")
-              set_config CONFIG_EXT4_FS y
-              ;;
-          esac
+
+          sed -i 's/^# CONFIG_HEADERS_INSTALL is not set$/CONFIG_HEADERS_INSTALL=y/' ./arch/arm64/configs/$KERNEL_DEFCONFIG
           
           set_config CONFIG_KSU_SUSFS y
           set_config CONFIG_KSU_SUSFS_SUS_PATH y
@@ -318,11 +288,7 @@ jobs:
           set_config CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG y
           set_config CONFIG_KSU_SUSFS_OPEN_REDIRECT y
           set_config CONFIG_KSU_SUSFS_SUS_MAP y
-          case "${{ github.event.inputs.kernelsu_variant }}" in
-            "KernelSU-Next")
-              set_config CONFIG_KSU_SUSFS_TRY_UMOUNT y
-              ;;
-          esac
+          
           sed -i 's/check_defconfig//' "$KERNEL_ROOT/build.config.gki" 2>/dev/null || true
           echo "Kernel configs enabled in $KERNEL_DEFCONFIG"
           
