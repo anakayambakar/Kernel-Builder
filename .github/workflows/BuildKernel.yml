@@ -31,11 +31,6 @@ on:
         required: true
         type: boolean
         default: true
-      schednew:
-        description: 'New Scheduler'
-        required: false
-        default: false
-        type: boolean
       github_release:
         description: 'Create GitHub Release'
         required: false
@@ -221,16 +216,6 @@ jobs:
           KSU_TAG="$(git describe --tags 2>/dev/null || git rev-parse --short HEAD)"
           echo "KSU_TAG=${KSU_TAG}" >> $GITHUB_ENV
           echo "✅ KSU tag: ${KSU_TAG}"
-
-      - name: Enable New Sched
-        if: inputs.schednew
-        working-directory: kernel_workspace
-        run: |
-          patch -p1 < $GITHUB_WORKSPACE/patches/0001-linux6.6.144-smartutil-v0.3.0.patch
-          cat >> arch/arm64/configs/$KERNEL_DEFCONFIG << 'EOF'
-          CONFIG_CPU_FREQ_GOV_SMARTUTIL=y
-          EOF
-          echo "✅ New Scheduler"
           
       - name: 🔧 Setup Patches (SUSFS)
         working-directory: kernel_workspace
@@ -273,19 +258,13 @@ jobs:
           }
           
           set_config CONFIG_KSU y
+          set_config CONFIG_KSU_SUSFS y
           set_config CONFIG_KALLSYMS y
           set_config CONFIG_KALLSYMS_ALL y
           
-          set_config CONFIG_KSU_SUSFS y
-          set_config CONFIG_KSU_SUSFS_SUS_PATH y
-          set_config CONFIG_KSU_SUSFS_SUS_MOUNT y
-          set_config CONFIG_KSU_SUSFS_SUS_KSTAT y
-          set_config CONFIG_KSU_SUSFS_SPOOF_UNAME y
-          set_config CONFIG_KSU_SUSFS_ENABLE_LOG y
-          set_config CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS y
-          set_config CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG y
-          set_config CONFIG_KSU_SUSFS_OPEN_REDIRECT y
-          set_config CONFIG_KSU_SUSFS_SUS_MAP y
+          if [ "${{ github.event.inputs.kernelsu_variant }}" = "FinaSU" ]; then
+            set_config CONFIG_KSU_HOOK_SUSFS_INLINE y
+          fi
           
           sed -i 's/check_defconfig//' "$KERNEL_ROOT/build.config.gki" 2>/dev/null || true
           echo "Kernel configs enabled in $KERNEL_DEFCONFIG"
