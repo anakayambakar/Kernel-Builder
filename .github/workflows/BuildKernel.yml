@@ -1,4 +1,4 @@
-name: Build RedPanda GKI Kernel
+name: Build GKI Kernel
 
 on:
   workflow_dispatch:
@@ -276,7 +276,7 @@ jobs:
           set_config CONFIG_KALLSYMS y
           set_config CONFIG_KALLSYMS_ALL y
 
-          sed -i 's/^# CONFIG_HEADERS_INSTALL is not set$/CONFIG_HEADERS_INSTALL=y/' ./arch/arm64/configs/$KERNEL_DEFCONFIG
+          # sed -i 's/^# CONFIG_HEADERS_INSTALL is not set$/CONFIG_HEADERS_INSTALL=y/' ./arch/arm64/configs/$KERNEL_DEFCONFIG
           
           set_config CONFIG_KSU_SUSFS y
           set_config CONFIG_KSU_SUSFS_SUS_PATH y
