@@ -188,20 +188,6 @@ jobs:
             curl -LSs "https://raw.githubusercontent.com/LyraVoid/FinaSU/refs/heads/master/kernel/setup.sh" | bash -s master
             cd FinaSU
 
-            # BakaSU's manager is signed with the ReSukiSU key, so it already
-            # matches the ReSukiSU preset row; rename the row to make both
-            # managers visible in the dynamic manager UI.
-            PRESET_PATCH="$GITHUB_WORKSPACE/patches/finasu_preset_managers.patch"
-            if [ -f "$PRESET_PATCH" ]; then
-              if patch -p1 -F 3 < "$PRESET_PATCH"; then
-                echo "✅ Preset manager row renamed to ReSukiSU/BakaSU"
-              else
-                echo "::warning::FinaSU preset manager patch failed to apply — BakaSU still matches the ReSukiSU row"
-              fi
-            else
-              echo "::warning::Preset manager patch not found at $PRESET_PATCH — skipping"
-            fi
-
             KSU_VERSION=$(expr $(git rev-list --count HEAD) + 30700 2>/dev/null || echo 114514)
             echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
             echo "✅ FinaSU $(git rev-parse --short HEAD) (ver $KSU_VERSION)"
@@ -325,12 +311,6 @@ jobs:
           echo 'ld.lld "$@" --thinlto-cache-dir=$LDCACHE_DIR --thinlto-jobs=$(($(nproc --all) / 2))' >> ld-wrapper
           chmod +x ld-wrapper
 
-          # FinaSU's Kbuild falls back to the KernelSU official cert when
-          # KSU_EXPECTED_SIZE/KSU_EXPECTED_HASH are not given, which leaves the
-          # FinaSU manager untrusted. Point the trusted slot at the FinaSU
-          # manager release cert here, and select the preset manager rows.
-          # Preset rows are recognized only; FinaSU stays the single trusted
-          # manager, and each preset must be opted in via the dynamic manager UI.
           KSU_MANAGER_ARGS=""
           if [ "${{ github.event.inputs.kernelsu_variant }}" = "FinaSU" ]; then
             KSU_MANAGER_ARGS="KSU_EXPECTED_SIZE=${{ env.KSU_FINA_EXPECTED_SIZE }} KSU_EXPECTED_HASH=${{ env.KSU_FINA_EXPECTED_HASH }} KSU_PRESET_MANAGER_MASK=${{ env.KSU_PRESET_MANAGER_MASK }}"
