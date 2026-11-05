@@ -188,12 +188,12 @@ jobs:
             curl -LSs "https://raw.githubusercontent.com/LyraVoid/FinaSU/refs/heads/master/kernel/setup.sh" | bash -s master
             cd FinaSU
 
-            KSNEXT_COMPAT_PATCH="$GITHUB_WORKSPACE/patches/bakasu_ksunext_compat.patch"
-            if [ -f "$KSNEXT_COMPAT_PATCH" ]; then
-              patch -p1 < "$KSNEXT_COMPAT_PATCH"
+            FINASU_KSNEXT_COMPAT_PATCH="$GITHUB_WORKSPACE/patches/bakasu_ksunext_compat.patch"
+            if [ -f "$FINASU_KSNEXT_COMPAT_PATCH" ]; then
+              patch -p1 < "$FINASU_KSNEXT_COMPAT_PATCH"
               echo "✅ KSU-Next manager compat applied"
             else
-              echo "::warning::KSU-Next compat patch not found at $KSNEXT_COMPAT_PATCH — skipping"
+              echo "::warning::KSU-Next compat patch not found at $FINASU_KSNEXT_COMPAT_PATCH — skipping"
             fi
             
             KSU_VERSION=$(expr $(git rev-list --count HEAD) + 30700 2>/dev/null || echo 114514)
@@ -205,12 +205,12 @@ jobs:
             curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash -s main
             cd KernelSU
             
-            KSNEXT_COMPAT_PATCH="$GITHUB_WORKSPACE/patches/bakasu_ksunext_compat.patch"
-            if [ -f "$KSNEXT_COMPAT_PATCH" ]; then
-              patch -p1 < "$KSNEXT_COMPAT_PATCH"
-              echo "✅ KSU-Next manager compat applied"
+            BAKA_KSNEXT_COMPAT_PATCH="$GITHUB_WORKSPACE/patches/bakasu_ksunext_compat.patch"
+            if [ -f "$BAKA_KSNEXT_COMPAT_PATCH" ]; then
+              patch -p1 < "$BAKA_KSNEXT_COMPAT_PATCH"
+              echo "✅ BakaSU in KSU-Next manager compat applied"
             else
-              echo "::warning::KSU-Next compat patch not found at $KSNEXT_COMPAT_PATCH — skipping"
+              echo "::warning::KSU-Next compat patch not found at $BAKA_KSNEXT_COMPAT_PATCH — skipping"
             fi
 
             MM_PATCH="$GITHUB_WORKSPACE/patches/more_multi_manager.patch"
