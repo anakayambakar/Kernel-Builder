@@ -188,6 +188,14 @@ jobs:
             curl -LSs "https://raw.githubusercontent.com/LyraVoid/FinaSU/refs/heads/master/kernel/setup.sh" | bash -s master
             cd FinaSU
 
+            KSNEXT_COMPAT_PATCH="$GITHUB_WORKSPACE/patches/bakasu_ksunext_compat.patch"
+            if [ -f "$KSNEXT_COMPAT_PATCH" ]; then
+              patch -p1 < "$KSNEXT_COMPAT_PATCH"
+              echo "✅ KSU-Next manager compat applied"
+            else
+              echo "::warning::KSU-Next compat patch not found at $KSNEXT_COMPAT_PATCH — skipping"
+            fi
+            
             KSU_VERSION=$(expr $(git rev-list --count HEAD) + 30700 2>/dev/null || echo 114514)
             echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
             echo "✅ FinaSU $(git rev-parse --short HEAD) (ver $KSU_VERSION)"
@@ -204,10 +212,6 @@ jobs:
             else
               echo "::warning::KSU-Next compat patch not found at $KSNEXT_COMPAT_PATCH — skipping"
             fi
-            
-            KSU_VERSION=$(expr $(git rev-list --count HEAD) + 30700 2>/dev/null || echo 114514)
-            echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-            echo "✅ BakaSU $(git rev-parse --short HEAD) (ver $KSU_VERSION)"
 
             MM_PATCH="$GITHUB_WORKSPACE/patches/more_multi_manager.patch"
             if [ -f "$MM_PATCH" ]; then
@@ -216,6 +220,11 @@ jobs:
             else
               echo "::warning::File Patch not found at $MM_PATCH — skipping"
             fi
+            
+            KSU_VERSION=$(expr $(git rev-list --count HEAD) + 30700 2>/dev/null || echo 114514)
+            echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+            echo "✅ BakaSU $(git rev-parse --short HEAD) (ver $KSU_VERSION)"
+            
             sed -i 's/-dirty//g' kernel/Kbuild
           else
             echo "❌ Unrecognized variant: ${{ github.event.inputs.kernelsu_variant }}"
@@ -225,7 +234,7 @@ jobs:
           echo "KSU_TAG=${KSU_TAG}" >> $GITHUB_ENV
           echo "✅ KSU tag: ${KSU_TAG}"
           
-      - name: Enable New Sched
+      - name: Enable Smartutil Sched
         if: inputs.schednew
         working-directory: kernel_workspace
         run: |
@@ -233,7 +242,7 @@ jobs:
           cat >> arch/arm64/configs/$KERNEL_DEFCONFIG << 'EOF'
           CONFIG_CPU_FREQ_GOV_SMARTUTIL=y
           EOF
-          echo "✅ New Scheduler"
+          echo "✅ Add Smartutil Scheduler"
 
       - name: 🔧 Setup Patches (SUSFS)
         working-directory: kernel_workspace
