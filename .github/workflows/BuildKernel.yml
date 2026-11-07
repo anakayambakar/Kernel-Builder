@@ -188,7 +188,7 @@ jobs:
             curl -LSs "https://raw.githubusercontent.com/LyraVoid/FinaSU/refs/heads/master/kernel/setup.sh" | bash -s master
             cd FinaSU
 
-            FINASU_KSNEXT_COMPAT_PATCH="$GITHUB_WORKSPACE/patches/bakasu_ksunext_compat.patch"
+            FINASU_KSNEXT_COMPAT_PATCH="$GITHUB_WORKSPACE/patches/finasu_ksunext_compat.patch"
             if [ -f "$FINASU_KSNEXT_COMPAT_PATCH" ]; then
               patch -p1 < "$FINASU_KSNEXT_COMPAT_PATCH"
               echo "✅ KSU-Next manager compat applied"
