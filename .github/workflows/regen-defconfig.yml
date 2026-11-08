@@ -5,16 +5,16 @@ on:
     inputs:
       kernel_repo:
         description: 'URL repo kernel'
-        required: false
+        required: true
         default: ''
       kernel_branch:
         description: 'Branch kernel (default: main)'
         required: false
         default: 'main'
       output_name:
-        description: 'Output filename (e.g., redpanda_defconfig)'
+        description: 'Output filename (e.g., gki_defconfig)'
         required: false
-        default: 'redpanda_defconfig'
+        default: 'gki_defconfig'
 
 jobs:
   regen:
@@ -29,20 +29,28 @@ jobs:
             libssl-dev libncurses-dev zlib1g-dev bc dwarves
 
       - name: Clone kernel source
+        env:
+          KERNEL_REPO: ${{ github.event.inputs.kernel_repo }}
+          KERNEL_BRANCH: ${{ github.event.inputs.kernel_branch }}
         run: |
-          REPO="${{ github.event.inputs.kernel_repo }}"
-          BRANCH="${{ github.event.inputs.kernel_branch }}"
-          git clone --depth=1 "$REPO" -b "$BRANCH" kernel_workspace
+          set -euo pipefail
+          BRANCH="${KERNEL_BRANCH:-main}"
+          if [ -z "${KERNEL_REPO:-}" ]; then
+            echo "::error::kernel_repo kosong"
+            exit 1
+          fi
+          git clone --depth=1 "$KERNEL_REPO" -b "$BRANCH" kernel_workspace
 
       - name: Cache Neutron Clang
         id: clang-cache
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: toolchains/clang
           key: neutron-clang-full-v2
 
       - name: Download & verify Neutron Clang
         run: |
+          set -euo pipefail
           cd "$GITHUB_WORKSPACE"
           mkdir -p toolchains/clang && cd toolchains/clang
 
@@ -60,38 +68,57 @@ jobs:
           ./bin/clang --version
 
       - name: Download defconfig & regenerate
+        env:
+          KERNEL_REPO:   ${{ github.event.inputs.kernel_repo }}
+          KERNEL_BRANCH: ${{ github.event.inputs.kernel_branch }}
+          OUTPUT_NAME:   ${{ github.event.inputs.output_name }}
         run: |
+          set -euo pipefail
           export PATH="$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH"
           MAKE="make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1"
 
-          REPO_PATH="${REPO_INPUT#https://github.com/}"
+          BRANCH="${KERNEL_BRANCH:-main}"
+
+          # Normalisasi URL repo -> owner/repo
+          REPO_PATH="$KERNEL_REPO"
+          REPO_PATH="${REPO_PATH#https://github.com/}"
           REPO_PATH="${REPO_PATH#http://github.com/}"
           REPO_PATH="${REPO_PATH#git@github.com:}"
           REPO_PATH="${REPO_PATH%.git}"
+          REPO_PATH="${REPO_PATH%/}"
 
-          DEFCONFIG_URL="https://raw.githubusercontent.com/${REPO_PATH}/${{ github.event.inputs.kernel_branch }}/arch/arm64/configs/gki_defconfig"
-          echo "DEFCONFIG_URL = $DEFCONFIG_URL"
+          if [ -z "$REPO_PATH" ] || [ "$REPO_PATH" = "$KERNEL_REPO" ]; then
+            echo "::error::kernel_repo tidak valid: '$KERNEL_REPO'"
+            exit 1
+          fi
+
+          # Nama defconfig target = OUTPUT_NAME
+          DEFCONFIG_NAME="${OUTPUT_NAME}"
+          DEFCONFIG_REL="arch/arm64/configs/${DEFCONFIG_NAME}"
 
           cd kernel_workspace
 
-          DEFCONFIG_NAME="$(basename "$DEFCONFIG_URL")"
-          DEFCONFIG="arch/arm64/configs/${DEFCONFIG_NAME}"
-
-          curl -fLSs "$DEFCONFIG_URL" -o "$DEFCONFIG" || {
-            echo "::error::Gagal mengunduh $DEFCONFIG_URL"
-            exit 1
-          }
+          # Pakai file dari hasil clone kalau ada; kalau tidak, unduh dari raw
+          if [ -f "$DEFCONFIG_REL" ]; then
+            echo "Defconfig ditemukan dari hasil clone: $DEFCONFIG_REL"
+          else
+            DEFCONFIG_URL="https://raw.githubusercontent.com/${REPO_PATH}/${BRANCH}/${DEFCONFIG_REL}"
+            echo "Defconfig tidak ada di clone, unduh: $DEFCONFIG_URL"
+            curl -fLSs "$DEFCONFIG_URL" -o "$DEFCONFIG_REL" || {
+              echo "::error::Gagal mengunduh $DEFCONFIG_URL"
+              exit 1
+            }
+          fi
 
           $MAKE "$DEFCONFIG_NAME"
-          OUTPUT_NAME="${{ github.event.inputs.output_name }}"
           cp out/.config "out/${OUTPUT_NAME}"
 
           echo "=== Info hasil regenerate ==="
-          echo "Baris defconfig awal : $(wc -l < "$DEFCONFIG")"
+          echo "Baris defconfig awal : $(wc -l < "$DEFCONFIG_REL")"
           echo "Baris full .config   : $(wc -l < "out/${OUTPUT_NAME}")"
 
       - name: Upload hasil regenerate
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: regenerated-defconfig
           path: "kernel_workspace/out/${{ github.event.inputs.output_name }}"
