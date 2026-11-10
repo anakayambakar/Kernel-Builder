@@ -3,20 +3,21 @@ name: Build GKI Kernel
 on:
   workflow_dispatch:
     inputs:
-      build_variant:
-        description: "Select build variant"
+      source_variant:
+        description: "Select source variant"
         required: true
         default: "RedPanda"
         type: choice
         options:
           - Testing
           - RedPanda
-      kernelsu_variant:
-        description: "Select kernelsu variant"
+      build_variant:
+        description: "Select build variant"
         required: true
         default: "FinaSU"
         type: choice
         options:
+          - None
           - FinaSU
           - BakaSU
       clang_choice:
@@ -137,9 +138,9 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ github.event.inputs.kernelsu_variant }}-${{ github.event.inputs.clang_choice }}-${{ env.KERNEL_FULL_VERSION }}
+          key: ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ env.KERNEL_FULL_VERSION }}
           restore-keys: |
-            ccache-${{ runner.os }}-${{ github.event.inputs.kernelsu_variant }}-${{ github.event.inputs.clang_choice }}-
+            ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-
 
       - name: 💾 Restore ThinLTO Cache
         id: restore-thinlto
@@ -183,7 +184,7 @@ jobs:
       - name: ⚡ Setup KernelSU
         working-directory: kernel_workspace
         run: |
-          if [ "${{ github.event.inputs.kernelsu_variant }}" = "FinaSU" ]; then
+          if [ "${{ github.event.inputs.build_variant }}" = "FinaSU" ]; then
             echo "🛠️ Setting up FinaSU (master branch)..."
             curl -LSs "https://raw.githubusercontent.com/LyraVoid/FinaSU/refs/heads/master/kernel/setup.sh" | bash -s master
             cd FinaSU
@@ -198,9 +199,12 @@ jobs:
             
             KSU_VERSION=$(expr $(git rev-list --count HEAD) + 30700 2>/dev/null || echo 114514)
             echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+            KSU_TAG="$(git describe --tags 2>/dev/null || git rev-parse --short HEAD)"
+            echo "KSU_TAG=${KSU_TAG}" >> $GITHUB_ENV
+            echo "✅ KSU tag: ${KSU_TAG}"
             echo "✅ FinaSU $(git rev-parse --short HEAD) (ver $KSU_VERSION)"
             
-          elif [ "${{ github.event.inputs.kernelsu_variant }}" = "BakaSU" ]; then
+          elif [ "${{ github.event.inputs.build_variant }}" = "BakaSU" ]; then
             echo "🛠️ Setting up BakaSU (main branch)..."
             curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash -s main
             cd KernelSU
@@ -223,19 +227,19 @@ jobs:
             
             KSU_VERSION=$(expr $(git rev-list --count HEAD) + 30700 2>/dev/null || echo 114514)
             echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+            KSU_TAG="$(git describe --tags 2>/dev/null || git rev-parse --short HEAD)"
+            echo "KSU_TAG=${KSU_TAG}" >> $GITHUB_ENV
+            echo "✅ KSU tag: ${KSU_TAG}"
             echo "✅ BakaSU $(git rev-parse --short HEAD) (ver $KSU_VERSION)"
-            
+
             sed -i 's/-dirty//g' kernel/Kbuild
           else
-            echo "❌ Unrecognized variant: ${{ github.event.inputs.kernelsu_variant }}"
+            echo "✅ Stock variant selected, skipping KernelSU setup"
             exit 1
           fi
-          KSU_TAG="$(git describe --tags 2>/dev/null || git rev-parse --short HEAD)"
-          echo "KSU_TAG=${KSU_TAG}" >> $GITHUB_ENV
-          echo "✅ KSU tag: ${KSU_TAG}"
           
       - name: Enable Smartutil Sched
-        if: inputs.schednew
+        if: github.event.inputs.schednew
         working-directory: kernel_workspace
         run: |
           patch -p1 < $GITHUB_WORKSPACE/patches/0001-linux6.6.144-smartutil-v0.3.0.patch
@@ -246,6 +250,7 @@ jobs:
 
       - name: 🔧 Setup Patches (SUSFS)
         working-directory: kernel_workspace
+        if: github.event.inputs.build_variant != 'None'
         run: |
           git clone --depth=1 https://github.com/Artecxyz/susfs4ksu.git -b gki-android15-6.6
           
@@ -262,6 +267,7 @@ jobs:
 
       - name: ⚙️ Configure Kernel Options
         working-directory: kernel_workspace
+        if: github.event.inputs.build_variant != 'None'
         run: |
           DEFCONFIG="./arch/arm64/configs/$KERNEL_DEFCONFIG"
           if [ ! -f "$DEFCONFIG" ]; then
@@ -289,7 +295,7 @@ jobs:
           set_config CONFIG_KALLSYMS y
           set_config CONFIG_KALLSYMS_ALL y
           
-          if [ "${{ github.event.inputs.kernelsu_variant }}" = "FinaSU" ]; then
+          if [ "${{ github.event.inputs.build_variant }}" = "FinaSU" ]; then
             set_config CONFIG_KSU_HOOK_SUSFS_INLINE y
           fi
           
@@ -321,7 +327,7 @@ jobs:
           chmod +x ld-wrapper
 
           KSU_MANAGER_ARGS=""
-          if [ "${{ github.event.inputs.kernelsu_variant }}" = "FinaSU" ]; then
+          if [ "${{ github.event.inputs.build_variant }}" = "FinaSU" ]; then
             KSU_MANAGER_ARGS="KSU_EXPECTED_SIZE=${{ env.KSU_FINA_EXPECTED_SIZE }} KSU_EXPECTED_HASH=${{ env.KSU_FINA_EXPECTED_HASH }} KSU_PRESET_MANAGER_MASK=${{ env.KSU_PRESET_MANAGER_MASK }}"
             echo "🔏 FinaSU manager signature: size=${{ env.KSU_FINA_EXPECTED_SIZE }} hash=${{ env.KSU_FINA_EXPECTED_HASH }}"
             echo "🧩 Preset manager mask: ${{ env.KSU_PRESET_MANAGER_MASK }} (KernelSU original excluded)"
@@ -358,26 +364,26 @@ jobs:
             exit 1
           fi
           gzip -n -f -9 ./Image
-          ZIP_NAME=RedPanda-GKI-${{ github.event.inputs.kernelsu_variant }}-$(date +%Y%m%d-%H%M).zip
+          ZIP_NAME=RedPanda-GKI-${{ github.event.inputs.build_variant }}-$(date +%Y%m%d-%H%M).zip
           zip -r9 "../$ZIP_NAME" ./*
 
       - name: 📤 Upload zip artifact
-        if: github.event.inputs.kernelsu_variant != 'none' && github.event.inputs.github_release != 'true'
+        if: github.event.inputs.github_release != 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: RedPanda-GKI-${{ github.event.inputs.kernelsu_variant }}
-          path: kernel_workspace/RedPanda-GKI-${{ github.event.inputs.kernelsu_variant }}-*.zip
+          name: RedPanda-GKI-${{ github.event.inputs.build_variant }}
+          path: kernel_workspace/RedPanda-GKI-${{ github.event.inputs.build_variant }}-*.zip
           retention-days: 7
 
       - name: 📤 Upload to GitHub Release
-        if: github.event.inputs.github_release == 'true'
+        if: github.event.inputs.github_release == 'true' && github.event.inputs.build_variant != 'None'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.kernelsu_variant }}-${{ env.KSUVER }}
-          name: RedPanda GKI ${{ github.event.inputs.kernelsu_variant }} v${{ env.KSUVER }} - ${{ env.KERNEL_FULL_VERSION }}
+          tag_name: ${{ github.event.inputs.build_variant }}-${{ env.KSUVER }}
+          name: RedPanda GKI ${{ github.event.inputs.build_variant }} v${{ env.KSUVER }} - ${{ env.KERNEL_FULL_VERSION }}
           files: kernel_workspace/*.zip
 
-      - name: 📨 Send Telegram (simple)
+      - name: 📨 Send Telegram
         if: github.event.inputs.telegram_notify == 'true'
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
@@ -395,7 +401,7 @@ jobs:
           <b>👤 Author:</b> @Artecxyz
           <b>📆 Build Time:</b> $(date "+%H:%M:%S - %d/%m/%Y")
           <b>🕒 Build Speed:</b> ${BUILD_MIN} minutes ${BUILD_SEC} second
-          <b>📦 Variant:</b> ${{ github.event.inputs.kernelsu_variant }} (ver ${{ env.KSUVER }})
+          <b>📦 Variant:</b> ${{ github.event.inputs.build_variant }} (ver ${{ env.KSUVER }})
           <b>🌐 Kernel version:</b> ${{ env.KERNEL_FULL_VERSION }}
           <b>🔧 Toolchain:</b> ${{ github.event.inputs.clang_choice }} Clang
           EOF
@@ -418,7 +424,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ github.event.inputs.kernelsu_variant }}-${{ github.event.inputs.clang_choice }}-${{ env.KERNEL_FULL_VERSION }}
+          key: ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ env.KERNEL_FULL_VERSION }}
 
       - name: 📦 Save ThinLTO Cache
         uses: actions/cache/save@v6
