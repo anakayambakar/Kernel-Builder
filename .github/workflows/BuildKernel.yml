@@ -51,7 +51,6 @@ env:
   KERNEL_REPO_TEST: https://github.com/anakayambakar/kernel
   KERNEL_REPO_REDPANDA: https://${{ secrets.KERNEL_REPO_TOKEN }}@github.com/Artecxyz/RedPanda-kernel.git
   KERNEL_REPO_QUANTUM: https://${{ secrets.KERNEL_REPO_TOKEN }}@github.com/Artecxyz/android15-6.6-lts.git
-  KERNEL_DEFCONFIG: redpanda_defconfig
   KSU_FINA_EXPECTED_SIZE: "0x02cc"
   KSU_FINA_EXPECTED_HASH: "2d89b50aaf1db013c2b6738f973f48b62ea21a3a8d7216bfec3521065d448458"
   KSU_PRESET_MANAGER_MASK: "0xfe"
@@ -86,10 +85,16 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.source_variant }}" = "Testing" ]; then
             git clone --depth=1 "$KERNEL_REPO_TEST" kernel_workspace
+            KERNEL_DEFCONFIG="redpanda_defconfig"
+            echo "KERNEL_DEFCONFIG=$KERNEL_DEFCONFIG" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.source_variant }}" = "RedPanda" ]; then
             git clone --depth=1 "$KERNEL_REPO_REDPANDA" kernel_workspace
+            KERNEL_DEFCONFIG="redpanda_defconfig"
+            echo "KERNEL_DEFCONFIG=$KERNEL_DEFCONFIG" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.source_variant }}" = "Quantum" ]; then
             git clone --depth=1 "$KERNEL_REPO_QUANTUM" kernel_workspace
+            KERNEL_DEFCONFIG="gki_defconfig"
+            echo "KERNEL_DEFCONFIG=$KERNEL_DEFCONFIG" >> $GITHUB_ENV
           fi
           cd kernel_workspace
           KERNEL_VERSION=$(grep '^VERSION =' Makefile | sed 's/.*= //')
@@ -247,7 +252,7 @@ jobs:
         working-directory: kernel_workspace
         run: |
           patch -p1 < $GITHUB_WORKSPACE/patches/0001-linux6.6.144-smartutil-v0.3.0.patch
-          cat >> arch/arm64/configs/$KERNEL_DEFCONFIG << 'EOF'
+          cat >> arch/arm64/configs/${{ env.KERNEL_DEFCONFIG }} << 'EOF'
           CONFIG_CPU_FREQ_GOV_SMARTUTIL=y
           EOF
           echo "✅ Add Smartutil Scheduler"
@@ -273,7 +278,7 @@ jobs:
         working-directory: kernel_workspace
         if: github.event.inputs.build_variant != 'None'
         run: |
-          DEFCONFIG="./arch/arm64/configs/$KERNEL_DEFCONFIG"
+          DEFCONFIG="./arch/arm64/configs/${{ env.KERNEL_DEFCONFIG }}"
           if [ ! -f "$DEFCONFIG" ]; then
             echo "ERROR: $DEFCONFIG not found"
             exit 1
@@ -304,7 +309,7 @@ jobs:
           fi
           
           sed -i 's/check_defconfig//' "$KERNEL_ROOT/build.config.gki" 2>/dev/null || true
-          echo "Kernel configs enabled in $KERNEL_DEFCONFIG"
+          echo "Kernel configs enabled in ${{ env.KERNEL_DEFCONFIG }}"
           
       - name: 🔨 Build Kernel
         working-directory: kernel_workspace
@@ -341,7 +346,7 @@ jobs:
             LD="$(pwd)/ld-wrapper" HOSTLD="$(pwd)/ld-wrapper" O=$GITHUB_WORKSPACE/kout \
             KCFLAGS="-pipe -Wno-error -Wno-implicit-function-declaration -Wno-implicit-int -Wno-default-const-init-var-unsafe -Wno-format -Wno-unknown-warning-option" \
             $KSU_MANAGER_ARGS \
-            $KERNEL_DEFCONFIG || { echo "make defconfig failed"; exit 1; }
+            ${{ env.KERNEL_DEFCONFIG }} || { echo "make defconfig failed"; exit 1; }
 
           make -j$(nproc --all) LLVM=1 LLVM_IAS=1 CC="ccache clang" HOSTCC="ccache gcc" \
             LD="$(pwd)/ld-wrapper" HOSTLD="$(pwd)/ld-wrapper" O=$GITHUB_WORKSPACE/kout \
