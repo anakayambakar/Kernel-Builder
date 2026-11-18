@@ -251,7 +251,7 @@ jobs:
         if: github.event.inputs.schednew
         working-directory: kernel_workspace
         run: |
-          patch -p1 < $GITHUB_WORKSPACE/patches/0001-linux6.6.144-smartutil-v0.3.0.patch
+          patch -p1 < $GITHUB_WORKSPACE/patches/smartutil-schedhorizon-0.3.0-6.6.144.patch
           cat >> arch/arm64/configs/${{ env.KERNEL_DEFCONFIG }} << 'EOF'
           CONFIG_CPU_FREQ_GOV_SMARTUTIL=y
           EOF
